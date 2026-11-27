@@ -1,36 +1,46 @@
+# Resnet50FPN được import để pickle của backbone.pth unpickle được (model.Resnet50FPN)
 from model import DensityRegressor, Resnet50FPN
-from utils import MAPS, Transform, extract_features, visualize
+from utils import MAPS, Transform, extract_features, visualize, set_conv_dir
 from PIL import Image
 import os
 import torch
-import argparse
 import json
 import numpy as np
 from tqdm import tqdm
 import time
 
-parser = argparse.ArgumentParser(description="Counting code")
-parser.add_argument("-dp", "--data_path", type=str, default='./chicken/', help="Path to the dataset")
-parser.add_argument("-ts", "--test_split", type=str, default='val', choices=["test", "val"], help="what data split to evaluate on")
-parser.add_argument("-g",  "--gpu-id", type=int, default=0, help="GPU id")
-parser.add_argument("-o", "--output-dir", type=str, default="./showimg/", help="Path to output")
-args = parser.parse_args()
+from config import load_config
 
-data_path = args.data_path
-anno_file = data_path + 'chicken_annocation.json'
-data_split_file = data_path + 'Train_Test_Val_chicken.json'
-im_dir = data_path + 'images'
+# Mọi tham số đọc từ YAML -> chỉ còn 1 đối số dòng lệnh:  --config configs/xxx.yaml
+cfg = load_config("test")
+set_conv_dir(cfg.conv_dir)
+
+data_path = cfg.data_path
+anno_file = data_path + cfg.anno_file
+data_split_file = data_path + cfg.split_file
+im_dir = data_path + cfg.images_dir
+
+output_dir = cfg.output_dir
+os.makedirs(output_dir, exist_ok=True)
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_id)
+os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu)
 
-resnet50_conv = Resnet50FPN()
-resnet50_conv = torch.load("backbone.pth")
+
+def load_checkpoint(path):
+    """torch>=2.6 đổi mặc định weights_only=True -> không đọc được file pickle cả module."""
+    try:
+        return torch.load(path, map_location='cpu', weights_only=False)
+    except TypeError:          # torch < 1.13 chưa có tham số weights_only
+        return torch.load(path, map_location='cpu')
+
+
+resnet50_conv = load_checkpoint(cfg.backbone_ckpt)
 resnet50_conv.cuda()
 resnet50_conv.eval()
 
 regressor = DensityRegressor(10, pool='mean')
-regressor.load_state_dict(torch.load("generate_density.pth"))
+regressor.load_state_dict(load_checkpoint(cfg.regressor_ckpt))
 regressor.cuda()
 regressor.eval()
 
@@ -44,8 +54,8 @@ cnt = 0
 SAE = 0  # sum of absolute errors
 SSE = 0  # sum of square errors
 
-print("Evaluation on {} data".format(args.test_split))
-im_ids = data_split[args.test_split]
+print("Evaluation on {} data".format(cfg.eval_split))
+im_ids = data_split[cfg.eval_split]
 pbar = tqdm(im_ids)
 t_all = []
 for im_id in pbar:
@@ -75,11 +85,11 @@ for im_id in pbar:
     pbar.set_description('{:<8}: actual-predicted: {:6d}, {:6.1f}, error: {:6.1f}. Current MAE: {:5.2f}, RMSE: {:5.2f}'.\
                          format(im_id, gt_cnt, pred_cnt, abs(pred_cnt - gt_cnt), SAE/cnt, (SSE/cnt)**0.5))
     print("")
-    rslt_file = "{}/{}_myout.png".format(args.output_dir, im_id)
+    rslt_file = "{}/{}_myout.png".format(output_dir, im_id)
     """
     Save the visualization
     """
     visualize(image.detach().cpu(), output.detach().cpu(), rslt_file, dots)
 print('average time:', np.mean(t_all) / 1)
 print('average fps:', 1 / np.mean(t_all))
-print('On {} data, MAE: {:6.2f}, RMSE: {:6.2f}'.format(args.test_split, SAE/cnt, (SSE/cnt)**0.5))
+print('On {} data, MAE: {:6.2f}, RMSE: {:6.2f}'.format(cfg.eval_split, SAE/cnt, (SSE/cnt)**0.5))

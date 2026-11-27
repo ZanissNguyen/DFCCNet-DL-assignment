@@ -1,0 +1,69 @@
+# ===========================================================================
+# DFCCNet - config duy nhất cho TOÀN BỘ pipeline
+#
+#   python generate_conv.py --config configs/default.yaml
+#   python train.py         --config configs/default.yaml
+#   python test.py          --config configs/default.yaml
+#   python density_show.py  --config configs/default.yaml
+#
+# Mọi script chỉ nhận duy nhất `--config` (hoặc `-c`).
+# File này vừa là "mặc định", vừa là config mẫu: các file YAML khác chỉ cần
+# ghi phần mình muốn, phần còn lại sẽ lấy từ đây (merge sâu theo section).
+#
+# Cấu trúc:
+#   common.<k>      -> dùng chung cho MỌI script (được merge vào từng section)
+#   generate_conv.<k> / train.<k> / test.<k> / density_show.<k> -> riêng script đó
+# ===========================================================================
+
+# --------------------------------------------------------------------------
+# Dùng chung
+# --------------------------------------------------------------------------
+common:
+  # THƯ MỤC DỮ LIỆU - PHẢI kết thúc bằng '/' (code nối chuỗi, không os.path.join)
+  data_path: ./chicken/
+  images_dir: images              # <data_path><images_dir>/
+  anno_file: chicken_annocation.json   # annotation {"<im_id>": {"boxs": [], "points": [[x,y],..]}}
+  split_file: Train_Test_Val_chicken.json
+  density_dir: annocation         # ground-truth density map (train.py)  <data_path><density_dir>/
+  conv_dir: ./chicken/conv        # feature convolution kernels (.npy) - generate_conv ghi vào đây
+  gpu: 0                          # GPU id -> CUDA_VISIBLE_DEVICES
+
+# --------------------------------------------------------------------------
+# python generate_conv.py -c configs/default.yaml
+# --------------------------------------------------------------------------
+generate_conv:
+  source_dir: single_chick         # <data_path><source_dir>/1.jpg ... <n_source_images>.jpg
+  n_source_images: 20
+
+# --------------------------------------------------------------------------
+# python train.py -c configs/default.yaml
+# --------------------------------------------------------------------------
+train:
+  output_dir: ./output             # stats.txt + *.pth (đã tự os.makedirs)
+  eval_split: val                  # split đánh giá sau MỖI epoch : val | test | train
+  epochs: 50
+  learning_rate: 1.0e-5            # dùng chung cho backbone + regressor
+  extra_loss_weight: 1.0e-9        # hệ số ExtraLoss (loss theo bounding box)
+
+  # --- cơ chế fine-tune ---
+  freeze_backbone: false           # true  = ĐÓNG BĂNG ResNet50-FPN,
+                                   #         chỉ train DensityRegressor (generate_density.pth)
+  save_backbone: ~                  # ~ (null) = tự quyết: true nếu train backbone,
+                                   #            false nếu freeze. set true/false để ép.
+  step_size: 20                    # StepLR
+  step_gamma: 0.9
+
+# --------------------------------------------------------------------------
+# python test.py -c configs/default.yaml
+# --------------------------------------------------------------------------
+test:
+  output_dir: ./showimg             # ảnh <im_id>_myout.png (đã tự os.makedirs)
+  eval_split: val                   # val | test
+  backbone_ckpt: ./result/backbone.pth          # torch.save(model) - load bằng weights_only=False
+  regressor_ckpt: ./result/generate_density.pth  # state_dict
+
+# --------------------------------------------------------------------------
+# python density_show.py -c configs/default.yaml
+# --------------------------------------------------------------------------
+density_show:
+  npy: ./chicken/annocation/1.npy

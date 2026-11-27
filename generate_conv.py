@@ -2,21 +2,27 @@ from model import Resnet50FPN
 from PIL import Image
 import os
 import torch
-import argparse
 import math
 import numpy as np
-from utils import Transform0
+from pathlib import Path
+from utils import Transform0, set_conv_dir
 import torch.nn.functional as F
 
-parser = argparse.ArgumentParser(description="Counting code")
-parser.add_argument("-dp", "--data_path", type=str, default='./chicken/', help="Path to the fish dataset")
-parser.add_argument("-g", "--gpu", type=int, default=0, help="GPU id")
+from config import load_config
 
-args = parser.parse_args()
-data_path = args.data_path
-im_dir = data_path + 'single_chick/'
+# Mọi tham số đọc từ YAML -> chỉ còn 1 đối số dòng lệnh:  --config configs/xxx.yaml
+cfg = load_config("generate_conv")
+set_conv_dir(cfg.conv_dir)
+
+data_path = cfg.data_path
+im_dir = data_path + cfg.source_dir + '/'
+
+out_dir = Path(cfg.conv_dir)
+out_dir.mkdir(parents=True, exist_ok=True)
+N_IMAGES = int(cfg.n_source_images)
+
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu)
 print(torch.cuda.is_available())
 resnet50_conv = Resnet50FPN()
 resnet50_conv.cuda()
@@ -33,7 +39,7 @@ generate features convolution kernels
 
 
 def get_conv():
-    for i in range(1, 21):
+    for i in range(1, N_IMAGES + 1):
         image_file = im_dir + str(i) + ".jpg"
         img = Image.open(image_file)
         img.load()
@@ -104,13 +110,19 @@ map3_conv, map4_conv = get_conv()
 change_scales_conv = list()
 change_scales_conv = change_scale(map3_conv, map4_conv)
 
-np.save("chicken/conv/map3_conv.npy", np.array(map3_conv.cpu()))
-np.save("chicken/conv/map4_conv.npy", np.array(map4_conv.cpu()))
-np.save("chicken/conv/map3_conv_08.npy", np.array(change_scales_conv[0].cpu()))
-np.save("chicken/conv/map4_conv_08.npy", np.array(change_scales_conv[1].cpu()))
-np.save("chicken/conv/map3_conv_09.npy", np.array(change_scales_conv[2].cpu()))
-np.save("chicken/conv/map4_conv_09.npy", np.array(change_scales_conv[3].cpu()))
-np.save("chicken/conv/map3_conv_11.npy", np.array(change_scales_conv[4].cpu()))
-np.save("chicken/conv/map4_conv_11.npy", np.array(change_scales_conv[5].cpu()))
-np.save("chicken/conv/map3_conv_12.npy", np.array(change_scales_conv[6].cpu()))
-np.save("chicken/conv/map4_conv_12.npy", np.array(change_scales_conv[7].cpu()))
+
+def _save(name, tensor):
+    np.save(str(out_dir / name), np.array(tensor.cpu()))
+
+
+_save("map3_conv.npy", map3_conv)
+_save("map4_conv.npy", map4_conv)
+_save("map3_conv_08.npy", change_scales_conv[0])
+_save("map4_conv_08.npy", change_scales_conv[1])
+_save("map3_conv_09.npy", change_scales_conv[2])
+_save("map4_conv_09.npy", change_scales_conv[3])
+_save("map3_conv_11.npy", change_scales_conv[4])
+_save("map4_conv_11.npy", change_scales_conv[5])
+_save("map3_conv_12.npy", change_scales_conv[6])
+_save("map4_conv_12.npy", change_scales_conv[7])
+print("[conv] đã ghi 10 file .npy vào", out_dir)

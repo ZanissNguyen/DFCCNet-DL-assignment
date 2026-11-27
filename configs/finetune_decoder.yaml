@@ -1,0 +1,30 @@
+# ===========================================================================
+# MỤC TIÊU CỦA NHÓM: đổi decoder -> chỉ fine-tune DensityRegressor
+# (generate_density.pth), ĐÓNG BĂNG backbone ResNet50-FPN.
+#
+#   python train.py --config configs/finetune_decoder.yaml
+#   python test.py  --config configs/finetune_decoder.yaml
+#
+# File này chỉ ghi phần KHÁC với configs/default.yaml; mọi khóa còn lại
+# (data_path, eval_split, step_size, ...) vẫn lấy từ default.yaml.
+# ===========================================================================
+
+train:
+  output_dir: ./output/finetune_decoder   # riêng cho experiment này
+
+  freeze_backbone: true     # backbone.requires_grad=False + luôn ở eval() (BN đóng băng)
+                            # -> không có optimizer/scheduler nào cho backbone
+  save_backbone: false      # backbone giữ nguyên weight pretrained, không cần lưu lại
+                            # (đặt true nếu muốn copy checkpoint làm starting point)
+
+  epochs: 30                # chỉ decoder cần ít epoch hơn train toàn bộ
+  learning_rate: 1.0e-5     # nếu muốn nhanh hơn, thử 1.0e-4 - chỉ regressor nhận LR này
+  # eval_split: val         # không đổi -> vẫn lấy từ default.yaml
+
+# Chạy test ngay bằng chính config này (evaluator đọc section `test`)
+test:
+  output_dir: ./showimg/finetune_decoder
+  eval_split: val
+  # backbone vẫn là pretrained gốc, chỉ regressor mới là bản fine-tune
+  backbone_ckpt: ./result/backbone.pth
+  regressor_ckpt: ./output/finetune_decoder/generate_density.pth

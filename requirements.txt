@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# DFCCNet - Python dependencies
+#
+# Reference environment (README "Prerequisites"):
+#     Python 3.8 / PyTorch 1.11 / CUDA 11.3
+#
+# Install (CUDA 11.3 wheels - matches Prerequisites):
+#     pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu113
+#
+# Install (CPU only machine, e.g. evaluation on a laptop):
+#     pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+#
+# If torch/torchvision are ALREADY installed (Kaggle notebook, conda env, ...),
+# do NOT reinstall them - install only the rest:
+#     pip install "numpy>=1.21,<1.27" "Pillow>=9,<11" "opencv-python>=4.5,<4.11" \
+#                 "PyYAML>=5.4" "matplotlib>=3.5,<3.9" "tqdm>=4.62,<5"
+#
+# Only third-party imports found in the sources are listed here:
+#   torch / torchvision  -> model.py, utils.py, train.py, test.py, generate_conv.py
+#   numpy                -> train.py, test.py, generate_conv.py, utils.py, density_show.py
+#   Pillow (PIL)         -> train.py, test.py, generate_conv.py
+#   opencv-python (cv2)  -> utils.py   (imported at module load, needed by *every* script)
+#   matplotlib           -> utils.py, density_show.py
+#   tqdm                 -> train.py, test.py
+#   PyYAML (yaml)        -> config.py, mọi script đều import config.py
+# ---------------------------------------------------------------------------
+
+# --- deep learning stack (must be installed together) -----------------------
+torch==1.11.0
+torchvision==0.12.0
+
+# --- data / imaging ---------------------------------------------------------
+numpy>=1.21,<1.27
+Pillow>=9,<11
+opencv-python>=4.5,<4.11
+PyYAML>=5.4          # config.py: mỗi script chỉ nhận 1 đối số --config
+
+# --- visualisation & logging ------------------------------------------------
+matplotlib>=3.5,<3.9
+tqdm>=4.62,<5
+
+# --- optional: run notebooks/*.ipynb locally --------------------------------
+# jupyter>=1.0
+# ipykernel>=6.0

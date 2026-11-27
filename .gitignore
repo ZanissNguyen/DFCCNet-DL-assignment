@@ -1,0 +1,6 @@
+*.npy
+*.pth
+chicken/
+result/
+.venv/
+*.zip

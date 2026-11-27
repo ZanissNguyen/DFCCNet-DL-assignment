@@ -1,56 +1,70 @@
 import torch.nn as nn
 from model import Resnet50FPN, DensityRegressor, weights_normal_init
-from utils import MAPS, Transform, TransformTrain, extract_features, ExtraLoss
+from utils import MAPS, Transform, TransformTrain, extract_features, ExtraLoss, set_conv_dir
 from PIL import Image
 import os
 import torch
-import argparse
 import json
 import numpy as np
 from tqdm import tqdm
-from os.path import exists, join
+from os.path import join
 import random
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.optim import lr_scheduler
 
-parser = argparse.ArgumentParser(description="Counting code")
-parser.add_argument("-dp", "--data_path", type=str, default='', help="Path to the dataset")
-parser.add_argument("-o", "--output_dir", type=str, default='', help="Path to save models")
-parser.add_argument("-ts", "--test-split", type=str, default='', choices=["train", "test", "val"],
-                    help="what data split to evaluate on on")
-parser.add_argument("-ep", "--epochs", type=int, default=, help="number of training epochs")
-parser.add_argument("-g", "--gpu", type=int, default=0, help="GPU id")
-parser.add_argument("-wm", "--extra_loss_weight", type=float, default=1e-9, help="weight for extra Loss")
-parser.add_argument("-lr", "--learning-rate", type=float, default=1e-5, help="learning rate")
-args = parser.parse_args()
+from config import load_config, save_config
 
-data_path = args.data_path
-anno_file = data_path + 'chicken_annotation.json'
-data_split_file = data_path + 'Train_Test_Val_chicken.json'
-im_dir = data_path + 'images'
-gt_dir = data_path + 'annocation'
+# Mọi tham số đọc từ YAML -> chỉ còn 1 đối số dòng lệnh:  --config configs/xxx.yaml
+cfg = load_config("train")
+set_conv_dir(cfg.conv_dir)
 
-if not exists(args.output_dir):
-    os.mkdir(args.output_dir)
+data_path = cfg.data_path
+anno_file = data_path + cfg.anno_file
+data_split_file = data_path + cfg.split_file
+im_dir = data_path + cfg.images_dir
+gt_dir = data_path + cfg.density_dir
+
+output_dir = cfg.output_dir
+os.makedirs(output_dir, exist_ok=True)
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu)
 
 criterion = nn.MSELoss().cuda()
 
+FREEZE_BACKBONE = bool(cfg.freeze_backbone)
+
 resnet50_conv = Resnet50FPN()
-resnet50_conv.train()
+if FREEZE_BACKBONE:
+    # Đóng băng backbone: không tính gradient, không cập nhật weight.
+    # Giữ ở eval() để BatchNorm dùng statistics của pretrained thay vì
+    # cập nhật running mean/var trên batch train.
+    for param in resnet50_conv.parameters():
+        param.requires_grad = False
+    resnet50_conv.eval()
+    n_frozen = sum(p.numel() for p in resnet50_conv.parameters())
+    print("[freeze] Đóng băng ResNet50-FPN ({:,} trọng số) -> chỉ train DensityRegressor "
+          "(generate_density.pth)".format(n_frozen))
+else:
+    resnet50_conv.train()
 resnet50_conv.cuda()
-optimizer0 = optim.Adam(resnet50_conv.parameters(), lr=args.learning_rate)
-scheduler0 = lr_scheduler.StepLR(optimizer0, step_size=20, gamma=0.9, verbose=True)
+
+optimizer0 = None   # optimizer của backbone (None khi freeze_backbone)
+scheduler0 = None
+if not FREEZE_BACKBONE:
+    optimizer0 = optim.Adam(resnet50_conv.parameters(), lr=cfg.learning_rate)
+    scheduler0 = lr_scheduler.StepLR(optimizer0, step_size=cfg.step_size, gamma=cfg.step_gamma)
 
 regressor = DensityRegressor(10, pool='mean')
 weights_normal_init(regressor, dev=0.001)
 regressor.train()
 regressor.cuda()
-optimizer = optim.Adam(regressor.parameters(), lr=args.learning_rate)
-scheduler = lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.9, verbose=True)
+optimizer = optim.Adam(regressor.parameters(), lr=cfg.learning_rate)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=cfg.step_size, gamma=cfg.step_gamma)
+
+# ~ (null) trong YAML => tự quyết định: freeze thì khỏi lưu backbone cho đỡ nặng
+SAVE_BACKBONE = cfg.save_backbone if cfg.save_backbone is not None else (not FREEZE_BACKBONE)
 
 with open(anno_file) as f:
     annotations = json.load(f)
@@ -58,9 +72,14 @@ with open(anno_file) as f:
 with open(data_split_file) as f:
     data_split = json.load(f)
 
+# Ghi lại config đã resolve để có thể tái lập experiment
+save_config(cfg, join(output_dir, "config.yaml"))
+print("[config]", cfg)
+
 
 def train():
-    optimizer0.zero_grad()
+    if optimizer0 is not None:
+        optimizer0.zero_grad()
     print("Training on chicken train set data")
     im_ids = data_split['train']
     random.shuffle(im_ids)
@@ -94,6 +113,8 @@ def train():
         if hasattr(torch.cuda, 'empty_cache'):
             torch.cuda.empty_cache()
 
+        # backbone đã requires_grad=False -> autograd không dựng graph qua nó,
+        # gradient chỉ chạy tới regressor (tiết kiệm VRAM + thời gian)
         features = extract_features(resnet50_conv, image.unsqueeze(0), MAPS)
 
         optimizer.zero_grad()
@@ -108,10 +129,11 @@ def train():
                 gt_density = gt_density * (orig_count / new_count)
 
         loss = criterion(output, gt_density)
-        extraloss = args.extra_loss_weight * ExtraLoss(output, gt_density, boxes)
+        extraloss = cfg.extra_loss_weight * ExtraLoss(output, gt_density, boxes)
         loss = loss + extraloss
         loss.backward()
-        optimizer0.step()
+        if optimizer0 is not None:
+            optimizer0.step()
         optimizer.step()
         train_loss += loss.item()
         pred_cnt = torch.sum(output).item()
@@ -133,8 +155,8 @@ def eval():
     SAE = 0
     SSE = 0
 
-    print("Evaluation on {} data".format(args.test_split))
-    im_ids = data_split[args.test_split]
+    print("Evaluation on {} data".format(cfg.eval_split))
+    im_ids = data_split[cfg.eval_split]
     pbar = tqdm(im_ids)
     for im_id in pbar:
         anno = annotations[im_id]
@@ -163,32 +185,37 @@ def eval():
             format(im_id, gt_cnt, pred_cnt, abs(pred_cnt - gt_cnt), SAE / cnt, (SSE / cnt) ** 0.5))
         print("")
 
-    print('On {} data, MAE: {:6.2f}, RMSE: {:6.2f}'.format(args.test_split, SAE / cnt, (SSE / cnt) ** 0.5))
+    print('On {} data, MAE: {:6.2f}, RMSE: {:6.2f}'.format(cfg.eval_split, SAE / cnt, (SSE / cnt) ** 0.5))
     return SAE / cnt, (SSE / cnt) ** 0.5
 
 
 best_mae, best_rmse = 1e7, 1e7
 stats = list()
-for epoch in range(0, args.epochs):
-    resnet50_conv.train()
+for epoch in range(0, cfg.epochs):
+    if FREEZE_BACKBONE:
+        resnet50_conv.eval()      # backbone đóng băng -> không bao giờ ở train mode
+    else:
+        resnet50_conv.train()
     regressor.train()
     train_loss, train_mae, train_rmse = train()
-    scheduler0.step()
+    if scheduler0 is not None:
+        scheduler0.step()
     scheduler.step()
     resnet50_conv.eval()
     regressor.eval()
     val_mae, val_rmse = eval()
     stats.append((train_loss, train_mae, train_rmse, val_mae, val_rmse))
-    stats_file = join(args.output_dir, "stats" + ".txt")
+    stats_file = join(output_dir, "stats" + ".txt")
     with open(stats_file, 'w') as f:
         for s in stats:
             f.write("%s\n" % ','.join([str(x) for x in s]))
     if best_mae >= val_mae:
         best_mae = val_mae
         best_rmse = val_rmse
-        model_name = args.output_dir + '/' + "generate_density.pth"
-        model_name0 = args.output_dir + '/' + "backbone.pth"
-        torch.save(resnet50_conv, model_name0)
+        if SAVE_BACKBONE:
+            model_name0 = output_dir + '/' + "backbone.pth"
+            torch.save(resnet50_conv, model_name0)
+        model_name = output_dir + '/' + "generate_density.pth"
         torch.save(regressor.state_dict(), model_name)
 
     print("Epoch {}, Avg. Epoch Loss: {} Train MAE: {} Train RMSE: {} Val MAE: {} Val RMSE: {} Best Val MAE: {} Best Val RMSE: {} ".format(

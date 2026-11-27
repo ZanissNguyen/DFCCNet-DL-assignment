@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch.nn.functional as F
 from torchvision import transforms
@@ -7,12 +9,23 @@ import matplotlib.pyplot as plt
 import torch.nn as nn
 
 
-criterion = nn.MSELoss().cuda()
+# (bỏ `criterion = nn.MSELoss().cuda()` ở đây: không file nào dùng tới,
+#  mà làm import utils thất bại trên máy không có CUDA)
 MAPS = ['map3', 'map4']
 MIN_HW = 384
 MAX_HW = 600
 IM_NORM_MEAN = [0.485, 0.456, 0.406]
 IM_NORM_STD = [0.229, 0.224, 0.225]
+
+# Thư mục chứa feature convolution kernels (do generate_conv.py sinh ra).
+# Mặc định khớp cấu trúc repo; mỗi script đổi qua config:  common.conv_dir
+CONV_DIR = 'chicken/conv'
+
+
+def set_conv_dir(path):
+    """Cho phép config đổi chỗ lấy các file map*_conv*.npy (xem configs/*.yaml)."""
+    global CONV_DIR
+    CONV_DIR = path
 
 
 def ExtraLoss(output, gt, boxes):
@@ -38,16 +51,20 @@ def extract_features(feature_model, image, feat_map_keys=['map3', 'map4']):
     Getting features convolution kernels
     """
     Image_features = feature_model(image)
-    map3_conv = torch.tensor(np.load("chicken/conv/map3_conv.npy")).cuda()
-    map4_conv = torch.tensor(np.load("chicken/conv/map4_conv.npy")).cuda()
-    map3_conv_08 = torch.tensor(np.load("chicken/conv/map3_conv_08.npy")).cuda()
-    map4_conv_08 = torch.tensor(np.load("chicken/conv/map4_conv_08.npy")).cuda()
-    map3_conv_09 = torch.tensor(np.load("chicken/conv/map3_conv_09.npy")).cuda()
-    map4_conv_09 = torch.tensor(np.load("chicken/conv/map4_conv_09.npy")).cuda()
-    map3_conv_11 = torch.tensor(np.load("chicken/conv/map3_conv_11.npy")).cuda()
-    map4_conv_11 = torch.tensor(np.load("chicken/conv/map4_conv_11.npy")).cuda()
-    map3_conv_12 = torch.tensor(np.load("chicken/conv/map3_conv_12.npy")).cuda()
-    map4_conv_12 = torch.tensor(np.load("chicken/conv/map4_conv_12.npy")).cuda()
+    # 10 kernel sinh bởi generate_conv.py (đổi chỗ lấy qua config: common.conv_dir)
+    def _kernel(name):
+        return torch.tensor(np.load(os.path.join(CONV_DIR, name + '.npy'))).cuda()
+
+    map3_conv = _kernel('map3_conv')
+    map4_conv = _kernel('map4_conv')
+    map3_conv_08 = _kernel('map3_conv_08')
+    map4_conv_08 = _kernel('map4_conv_08')
+    map3_conv_09 = _kernel('map3_conv_09')
+    map4_conv_09 = _kernel('map4_conv_09')
+    map3_conv_11 = _kernel('map3_conv_11')
+    map4_conv_11 = _kernel('map4_conv_11')
+    map3_conv_12 = _kernel('map3_conv_12')
+    map4_conv_12 = _kernel('map4_conv_12')
     """
     Getting Correlation map
     """

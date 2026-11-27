@@ -60,6 +60,66 @@ python generate_conv.py
 ```
 python train.py
 ```  
+## Contributing
+
+### Setup a virtual environment
+
+Python **3.8** is required (see *Prerequisites*). Run everything from the repository root.
+All third-party dependencies live in [`requirements.txt`](requirements.txt).
+
+**Windows (PowerShell)**
+
+```powershell
+py -3.8 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu113
+```
+
+**macOS / Linux**
+
+```bash
+python3.8 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu113
+```
+
+**Conda alternative** (the environment originally recommended above):
+
+```bash
+conda create -n dfccnet python=3.8 -y
+conda activate dfccnet
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu113
+```
+
+Notes:
+
+* `.venv/` is already listed in [`.gitignore`](.gitignore), so the environment is never committed.
+* `--extra-index-url https://download.pytorch.org/whl/cu113` selects the CUDA 11.3 wheels.
+  For a CPU-only machine use `--extra-index-url https://download.pytorch.org/whl/cpu`
+  instead, or install `torch`/`torchvision` first and then run `pip install -r requirements.txt`.
+* If `torch`/`torchvision` are already present (Kaggle notebook, a shared conda env),
+  skip them and install only the remaining packages - see the comments inside `requirements.txt`.
+* `train.py`, `test.py` and `generate_conv.py` all call `.cuda()` directly, so a CUDA GPU
+  is mandatory for training and evaluation. Verify the environment with:
+
+```bash
+python -c "import torch, torchvision; print(torch.__version__, torchvision.__version__, torch.cuda.is_available())"
+```
+
+### Leaving / refreshing the environment
+
+```bash
+deactivate                                   # leave the venv
+rm -rf .venv && python3.8 -m venv .venv      # recreate it from scratch
+```
+
+### More documentation
+
+* [`MANUAL.md`](MANUAL.md) - every module, its command-line arguments and runnable examples.
+* [`notebooks/kaggle.ipynb`](notebooks/kaggle.ipynb) - run the pipeline on a Kaggle GPU notebook.
+
 ## Citing
 &emsp;Please cite this article if our code and data were helpful to you! https://doi.org/10.3390/ani13233729
 
