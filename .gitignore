@@ -4,3 +4,4 @@ chicken/
 result/
 .venv/
 *.zip
+*.pyc
