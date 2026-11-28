@@ -22,6 +22,19 @@ IM_NORM_STD = [0.229, 0.224, 0.225]
 CONV_DIR = 'chicken/conv'
 
 
+def load_checkpoint(path):
+    """Đọc .pth đã lưu bằng torch.save.
+
+    - backbone.pth lưu CẢ object module -> cần weights_only=False
+      (torch >= 2.6 đổi default weights_only=True, sẽ từ chối pickle).
+    - generate_density.pth là state_dict -> đọc được bằng cả 2 cách.
+    """
+    try:
+        return torch.load(path, map_location='cpu', weights_only=False)
+    except TypeError:          # torch < 1.13 chưa có tham số weights_only
+        return torch.load(path, map_location='cpu')
+
+
 def set_conv_dir(path):
     """Cho phép config đổi chỗ lấy các file map*_conv*.npy (xem configs/*.yaml)."""
     global CONV_DIR

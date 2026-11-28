@@ -50,6 +50,12 @@ train:
                                    #         chỉ train DensityRegressor (generate_density.pth)
   save_backbone: ~                  # ~ (null) = tự quyết: true nếu train backbone,
                                    #            false nếu freeze. set true/false để ép.
+
+  # --- khởi tạo từ checkpoint Dense-Chicken pretrained (trước khi freeze) ---
+  init_backbone_ckpt: ~            # ~ = bỏ qua (dùng ImageNet pretrained trong model.py)
+                                   # ./result/backbone.pth = load trước khi freeze
+  init_regressor_ckpt: ~           # ~ = weights_normal_init (decoder random)
+                                   # ./result/generate_density.pth = load decoder pretrained
   step_size: 20                    # StepLR
   step_gamma: 0.9
 

@@ -37,28 +37,44 @@ DFCCNet                                           # Project folder. Typically we
 │   │───backbone.pth
 │   └───generate_density.pth     
 │                               
+│───configs                                      # YAML configs - ALL run parameters live here.
+│   │───default.yaml                             # Default config (= base of every other config)
+│   ├───finetune_decoder.yaml                    # Freeze backbone, fine-tune DensityRegressor only
+│   └───example.yaml                             # Documented schema: every key + type + default
+│                               
 │───density_show.py                              # Density map visualization file.
 │───generate_conv.py                             # File that generates feature convolution kernels.
 │───model.py                                     # File of the model.
 │───train.py                                     # File with the code to train the model.
 │───test.py                                      # File with the code to test the model.
 │───utils.py                                     # File contains functions that other files need to use
+│───config.py                                    # Config loader: every script takes only --config.
+│───requirements.txt                             # Python dependencies (incl. PyYAML).
+│───MANUAL.md                                    # Per-module manual: config keys + examples.
+├───notebooks/kaggle.ipynb                       # Run the whole pipeline on a Kaggle GPU.
 └───README.md                                    # Readme of the project.
 ```
-&emsp;3. Evaluate the model
+&emsp;3. Evaluate the model (all parameters live in the YAML config)
 ```
-python test.py
+python test.py --config configs/default.yaml
 ```  
 
 ## Training
-&emsp;1. Configure the files required to run, and modify the root path in the "train.py" based on your dataset location.  
+&emsp;1. Every run parameter lives in a YAML config under [`configs/`](configs/).
+Set `common.data_path` (keep the trailing `/`) to your dataset location.
+Each script takes exactly **one argument: `--config`**.  
 &emsp;2. Generates feature convolution kernels:
 ```
-python generate_conv.py
+python generate_conv.py --config configs/default.yaml
 ```  
 &emsp;3. Run train.py:
 ```
-python train.py
+python train.py --config configs/default.yaml
+```
+&emsp;4. Only fine-tune the decoder (`DensityRegressor`) with the backbone frozen
+(the group's goal is swapping the decoder - see `train.freeze_backbone`):
+```
+python train.py --config configs/finetune_decoder.yaml
 ```  
 ## Contributing
 

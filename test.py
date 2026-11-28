@@ -1,6 +1,6 @@
 # Resnet50FPN được import để pickle của backbone.pth unpickle được (model.Resnet50FPN)
 from model import DensityRegressor, Resnet50FPN
-from utils import MAPS, Transform, extract_features, visualize, set_conv_dir
+from utils import MAPS, Transform, extract_features, visualize, set_conv_dir, load_checkpoint
 from PIL import Image
 import os
 import torch
@@ -25,15 +25,6 @@ os.makedirs(output_dir, exist_ok=True)
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu)
-
-
-def load_checkpoint(path):
-    """torch>=2.6 đổi mặc định weights_only=True -> không đọc được file pickle cả module."""
-    try:
-        return torch.load(path, map_location='cpu', weights_only=False)
-    except TypeError:          # torch < 1.13 chưa có tham số weights_only
-        return torch.load(path, map_location='cpu')
-
 
 resnet50_conv = load_checkpoint(cfg.backbone_ckpt)
 resnet50_conv.cuda()

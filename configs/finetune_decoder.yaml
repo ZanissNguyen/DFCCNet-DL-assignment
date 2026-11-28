@@ -12,6 +12,11 @@
 train:
   output_dir: ./output/finetune_decoder   # riêng cho experiment này
 
+  # --- 1) + 2) load 2 checkpoint Dense-Chicken pretrained TRƯỚC khi fine-tune ---
+  init_backbone_ckpt: ./result/backbone.pth           # Resnet50FPN (torch.save cả object)
+  init_regressor_ckpt: ./result/generate_density.pth  # state_dict DensityRegressor
+
+  # --- 3) SAU khi load mới freeze ---
   freeze_backbone: true     # backbone.requires_grad=False + luôn ở eval() (BN đóng băng)
                             # -> không có optimizer/scheduler nào cho backbone
   save_backbone: false      # backbone giữ nguyên weight pretrained, không cần lưu lại

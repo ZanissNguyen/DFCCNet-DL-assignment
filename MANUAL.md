@@ -50,6 +50,11 @@ nên `cfg.data_path` và `cfg.epochs` cùng nằm ở cấp trên, không cần 
 
 **Cách tạo config cho experiment riêng:** chỉ ghi phần *chênh lệch* với `default.yaml`:
 
+> 📄 **[`configs/example.yaml`](configs/example.yaml)** — file-minh-họa liệt kê **mọi khóa**
+> của cả 5 section, kèm kiểu dữ liệu / giá trị mặc định / giá trị hợp lệ và quy tắc
+> merge. Đây là tài liệu chính thức về định dạng config; nó cũng là config hợp lệ
+> (trùng giá trị với `default.yaml`) nên chạy thử được ngay.
+
 ```yaml
 # configs/my_run.yaml
 train:
@@ -146,16 +151,30 @@ python generate_conv.py            # --config có default, không bắt buộc t
 | `extra_loss_weight` | `float` | `1.0e-9` | Hệ số `ExtraLoss` (loss theo bounding box) cộng vào MSE |
 | `freeze_backbone` | `bool` | `false` | **true = đóng băng ResNet50-FPN, chỉ train `DensityRegressor`** (xem §3.1) |
 | `save_backbone` | `bool\|null` | `~` (null) | `null` = tự quyết (`not freeze_backbone`); set `true/false` để ép |
+| `init_backbone_ckpt` | `str\|null` | `~` (null) | Load backbone pretrained **trước khi freeze**: `./result/backbone.pth` (Dense-Chicken). `null` = dùng ImageNet trong `model.py` |
+| `init_regressor_ckpt` | `str\|null` | `~` (null) | Load decoder pretrained **trước khi freeze**: `./result/generate_density.pth`. `null` = `weights_normal_init` (random) |
 | `step_size` | `int` | `20` | `StepLR.step_size` |
 | `step_gamma` | `float` | `0.9` | `StepLR.gamma` |
 
 Kế thừa từ `common`: `data_path`, `anno_file`, `split_file`, `images_dir`, `density_dir`, `conv_dir`, `gpu`.
 
-### 3.1 Cơ chế freeze backbone (mục tiêu của nhóm: đổi decoder)
+### 3.1 Cơ chế fine-tune (mục tiêu của nhóm: đổi decoder)
+
+Thứ tự khởi tạo trong `train.py` (bắt buộc: **load xong mới freeze**):
+
+```
+1) Resnet50FPN() / DensityRegressor(10)         ← khởi tạo
+2) load init_backbone_ckpt  (result/backbone.pth)          ← Dense-Chicken pretrained
+   load init_regressor_ckpt (result/generate_density.pth)  ← Dense-Chicken pretrained
+3) nếu freeze_backbone: requires_grad=False + eval()        ← SAU khi load
+4) optimizer = Adam(regressor.parameters())    ← CHỈ tham số decoder; optimizer0 = None
+```
 
 ```yaml
 train:
-  freeze_backbone: true     # ĐÓNG BĂNG ResNet50-FPN
+  init_backbone_ckpt: ./result/backbone.pth           # 2) load pretrained Dense-Chicken
+  init_regressor_ckpt: ./result/generate_density.pth
+  freeze_backbone: true     # 3) ĐÓNG BĂNG ResNet50-FPN
   save_backbone: false      # ~ (null) đã tự ra false khi freeze
 ```
 
@@ -323,7 +342,8 @@ Repo có sẵn [`notebooks/kaggle.ipynb`](notebooks/kaggle.ipynb). Notebook sẽ
 3. Cài phần thiếu của `requirements.txt` (**không** cài lại `torch` — Kaggle đã có sẵn CUDA build).
 4. Sinh density map tạm bằng Gaussian nếu thiếu `annocation/` (§7.2).
 5. **Ghi `run.yaml`** vào `/kaggle/working` — merge `common` + `train` + `test` với
-   path của REPO/DATA, có toggle `FREEZE_BACKBONE` / `SAVE_BACKBONE` ở cell config.
+   path của REPO/DATA. Toggle ở cell config: `FREEZE_BACKBONE`, `SAVE_BACKBONE`,
+   `INIT_BACKBONE` / `INIT_REGRESSOR` (`'auto'` = tự dùng `result/*.pth` nếu file tồn tại).
 6. Chạy pipeline bằng `subprocess` với **đúng cú pháp config mới**:
    `python generate_conv.py --config run.yaml` → `python train.py --config run.yaml`
    → `python test.py --config run.yaml` (đọc kết quả theo regex `[train|test]/...`)

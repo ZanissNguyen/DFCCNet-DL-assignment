@@ -1,0 +1,156 @@
+# ===========================================================================
+# EXAMPLE.YAML — MẪU GIẢI THÍCH ĐẦY ĐỦ ĐỊNH DẠNG FILE CONFIG CỦA DFCCNet
+#
+# File này là "tài liệu dưới dạng YAML": liệt kê MỌI khóa mà pipeline nhận,
+# kèm kiểu dữ liệu, giá trị mặc định và giá trị hợp lệ.
+# Nó cũng là config hợp lệ 100% (các giá trị trùng với default.yaml) nên
+# chạy thử được ngay:
+#     python generate_conv.py --config configs/example.yaml
+#     python train.py         --config configs/example.yaml
+#     python test.py          --config configs/example.yaml
+#     python density_show.py  --config configs/example.yaml
+#
+# --------------------------------------------------------------------------
+# A. CẤU TRÚC CƠ BẢN
+# --------------------------------------------------------------------------
+# File YAML = cây "khóa: giá trị" lồng nhau, thụt lề bằng SPACE (không tab):
+#
+#     section:                 # 5 section cố định, KHÔNG thêm/bớt tên section:
+#       key: value             #   common | generate_conv | train | test | density_show
+#       key2:
+#         sub: value           #   (repo này không dùng lồng sâu hơn 1 cấp)
+#
+# Dấu # bắt đầu bình luận (cần 1 khoảng trắng trước # khi đứng sau giá trị).
+#
+# --------------------------------------------------------------------------
+# B. CÁCH NẠP (xem config.py — load_config)
+# --------------------------------------------------------------------------
+#   Bước 1. đọc configs/default.yaml         -> làm GIÁ TRỊ MẶC ĐỊNH
+#   Bước 2. đọc file bạn truyền qua --config -> merge ĐÈ lên (deep merge theo section)
+#   Bước 3. gộp common vào section của script -> cfg = {**common, **<section>}
+#
+# Ví dụ:  python train.py --config configs/example.yaml
+#   => cfg.data_path     lấy từ common     (Bước 3)
+#      cfg.epochs        lấy từ train      (Bước 3)
+#      khóa KHÔNG có trong file này        -> lấy từ default.yaml (Bước 2)
+# => File của bạn chỉ cần ghi PHẦN KHÁC với default.yaml (xem §H ở cuối).
+#
+# --------------------------------------------------------------------------
+# C. KIỂU DỮ LIỆU
+# --------------------------------------------------------------------------
+#   string   text (có/không ngoặc kép đều được)   data_path: ./chicken/
+#   int      số nguyên                            epochs: 50
+#   float    số thực, dạng mũ viết bình thường   learning_rate: 1.0e-5
+#   bool     true / false (VIẾT THƯỜNG, không phải True/False/yes/1)
+#   null     ~  hoặc  null  = "để trống / auto"  save_backbone: ~
+#   comment  # ...
+#
+# --------------------------------------------------------------------------
+# D. LƯU Ý QUAN TRỌNG (đọc trước khi sửa)
+# --------------------------------------------------------------------------
+#   * common.data_path BẮT BUỘC kết thúc bằng '/' — code nối chuỗi kiểu
+#     data_path + anno_file (KHÔNG dùng os.path.join).
+#   * Đường dẫn tương đối được tính so với thư mục bạn chạy lệnh (repo root).
+#   * Sai kiểu (ví dụ epochs: "50" có ngoặc) có thể làm script chạy sai —
+#     giữ nguyên định dạng như mẫu.
+#   * Mỗi script chỉ nhận 1 đối số dòng lệnh: --config (hoặc -c).
+#     Ngoại lệ: density_show.py có thêm --npy (ghi đè density_show.npy).
+# ===========================================================================
+
+
+# ===========================================================================
+# SECTION 1 — common: dùng chung cho MỌI script
+# ===========================================================================
+common:
+  data_path: ./chicken/              # [string] thư mục dataset; PHẢI kết thúc bằng '/'
+  images_dir: images                 # [string] ảnh nằm ở <data_path><images_dir>/<im_id>.jpg
+  anno_file: chicken_annocation.json # [string] file annotation (CHÍNH TẢ: "annocation" không có 't')
+                                     #   cấu trúc: {"<im_id>.jpg": {"boxs": [...], "points": [[x,y],...]}}
+  split_file: Train_Test_Val_chicken.json  # [string] {"train": [...], "val": [...], "test": [...]}
+                                     #   (416 / 61 / 123 ảnh)
+  density_dir: annocation            # [string] GT density map -> <data_path><density_dir>/<im_id>.npy
+                                     #   (train.py bắt buộc; repo KHÔNG có sẵn — xem MANUAL §7.2)
+  conv_dir: ./chicken/conv           # [string] 10 kernel .npy — generate_conv.py GHI vào đây,
+                                     #   utils.extract_features() ĐỌC từ đây (cùng 1 chỗ)
+  gpu: 0                             # [int >= 0] GPU id -> gán vào biến môi trường CUDA_VISIBLE_DEVICES
+
+
+# ===========================================================================
+# SECTION 2 — generate_conv: python generate_conv.py --config <file>
+# ===========================================================================
+generate_conv:
+  source_dir: single_chick           # [string] ảnh nguồn: <data_path><source_dir>/1.jpg …
+  n_source_images: 20                # [int >= 1] số ảnh nguồn đọc vào để sinh kernel
+
+
+# ===========================================================================
+# SECTION 3 — train: python train.py --config <file>
+# ===========================================================================
+train:
+  # --- đường dẫn output / dữ liệu ---
+  output_dir: ./output               # [string] ghi vào đây: backbone.pth, generate_density.pth,
+                                     #   stats.txt, config.yaml (script TỰ os.makedirs)
+  eval_split: val                    # [string] split đánh giá SAU MỖI epoch để chọn best model
+                                     #   hợp lệ: train | val | test
+
+  # --- siêu tham số huấn luyện ---
+  epochs: 50                         # [int >= 0] số epoch
+  learning_rate: 1.0e-5              # [float > 0] LR cho Adam (của decoder, và cả backbone nếu không freeze)
+  extra_loss_weight: 1.0e-9          # [float >= 0] hệ số ExtraLoss cộng vào MSE
+
+  # --- cơ chế freeze + fine-tune decoder (mục tiêu của nhóm) ---
+  freeze_backbone: false             # [bool] true  = ĐÓNG BĂNG ResNet50-FPN (requires_grad=False
+                                     #        + luôn eval()), chỉ train DensityRegressor
+                                     #        false = train cả 2 (hành vi gốc)
+  save_backbone: ~                   # [bool | null] ~ = AUTO: không freeze -> true, freeze -> false
+                                     #        true/false = ép, không theo auto
+  init_backbone_ckpt: ~              # [string | null] ~ = BỎ QUA (dùng ImageNet pretrained trong model.py)
+                                     #   ./result/backbone.pth = load checkpoint Dense-Chicken
+                                     #   TRƯỚC khi freeze (thứ tự: load -> freeze -> optimizer)
+  init_regressor_ckpt: ~             # [string | null] ~ = weights_normal_init (decoder random)
+                                     #   ./result/generate_density.pth = load decoder pretrained
+                                     #   TRƯỚC khi freeze
+
+  # --- kế hoạch học ---
+  step_size: 20                      # [int >= 1] StepLR.step_size (đơn vị: epoch)
+  step_gamma: 0.9                    # [float] StepLR.gamma (0 < gamma <= 1)
+
+
+# ===========================================================================
+# SECTION 4 — test: python test.py --config <file>
+# ===========================================================================
+test:
+  output_dir: ./showimg              # [string] ảnh kết quả <im_id>_myout.png (script TỰ os.makedirs)
+  eval_split: val                    # [string] hợp lệ: val | test
+  backbone_ckpt: ./result/backbone.pth          # [string] file torch.save(model) — đọc bằng
+                                     #   torch.load(weights_only=False) (torch >= 2.6)
+  regressor_ckpt: ./result/generate_density.pth # [string] state_dict của DensityRegressor
+                                     #   Muốn test model vừa train: trỏ vào <train.output_dir>/...
+
+
+# ===========================================================================
+# SECTION 5 — density_show: python density_show.py --config <file>
+# ===========================================================================
+density_show:
+  npy: ./chicken/annocation/1.npy    # [string] file density .npy cần visualize
+                                     #   (hoặc bỏ qua khóa này, truyền: --npy <path>)
+
+
+# ===========================================================================
+# H. VÍ DỤ FILE RIÊNG (chỉ ghi phần KHÁC — recommended)
+# ===========================================================================
+# File riêng biệt chỉ cần ghi section + khóa muốn đổi, ví dụ
+# configs/finetune_decoder.yaml:
+#
+#     train:
+#       output_dir: ./output/finetune_decoder
+#       init_backbone_ckpt: ./result/backbone.pth
+#       init_regressor_ckpt: ./result/generate_density.pth
+#       freeze_backbone: true
+#       save_backbone: false
+#       epochs: 30
+#     test:
+#       regressor_ckpt: ./output/finetune_decoder/generate_density.pth
+#
+# Mọi khóa còn lại (data_path, gpu, step_size, ...) tự lấy từ default.yaml.
+# ===========================================================================

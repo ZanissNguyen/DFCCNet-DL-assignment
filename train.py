@@ -1,6 +1,7 @@
 import torch.nn as nn
 from model import Resnet50FPN, DensityRegressor, weights_normal_init
-from utils import MAPS, Transform, TransformTrain, extract_features, ExtraLoss, set_conv_dir
+from utils import (MAPS, Transform, TransformTrain, extract_features, ExtraLoss,
+                   set_conv_dir, load_checkpoint)
 from PIL import Image
 import os
 import torch
@@ -35,7 +36,27 @@ criterion = nn.MSELoss().cuda()
 
 FREEZE_BACKBONE = bool(cfg.freeze_backbone)
 
+# ---------------------------------------------------------------------------
+# 1) + 2) Load pretrained Dense-Chicken (nếu config trỏ checkpoint)
+#     - init_backbone_ckpt  : backbone.pth  (torch.save cả object module)
+#     - init_regressor_ckpt : generate_density.pth (state_dict của decoder)
+#     ~ (null) => bỏ qua, giữ hành vi cũ: backbone ImageNet + decoder random.
+# ---------------------------------------------------------------------------
 resnet50_conv = Resnet50FPN()
+if cfg.init_backbone_ckpt:
+    resnet50_conv = load_checkpoint(cfg.init_backbone_ckpt)
+    print("[init] backbone pretrained <- {}".format(cfg.init_backbone_ckpt))
+
+regressor = DensityRegressor(10, pool='mean')
+if cfg.init_regressor_ckpt:
+    regressor.load_state_dict(load_checkpoint(cfg.init_regressor_ckpt))
+    print("[init] decoder pretrained <- {}".format(cfg.init_regressor_ckpt))
+else:
+    weights_normal_init(regressor, dev=0.001)
+
+# ---------------------------------------------------------------------------
+# 3) SAU khi load xong 2 checkpoint mới freeze backbone
+# ---------------------------------------------------------------------------
 if FREEZE_BACKBONE:
     # Đóng băng backbone: không tính gradient, không cập nhật weight.
     # Giữ ở eval() để BatchNorm dùng statistics của pretrained thay vì
@@ -56,12 +77,14 @@ if not FREEZE_BACKBONE:
     optimizer0 = optim.Adam(resnet50_conv.parameters(), lr=cfg.learning_rate)
     scheduler0 = lr_scheduler.StepLR(optimizer0, step_size=cfg.step_size, gamma=cfg.step_gamma)
 
-regressor = DensityRegressor(10, pool='mean')
-weights_normal_init(regressor, dev=0.001)
+# 4) optimizer chỉ chứa tham số của DECODER (DensityRegressor)
 regressor.train()
 regressor.cuda()
 optimizer = optim.Adam(regressor.parameters(), lr=cfg.learning_rate)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=cfg.step_size, gamma=cfg.step_gamma)
+n_opt = sum(p.numel() for g in optimizer.param_groups for p in g["params"])
+print("[optim] optimizer chứa {:,} trọng số (chỉ decoder); optimizer0 = {}".format(
+    n_opt, "None (freeze)" if optimizer0 is None else "Adam (backbone)"))
 
 # ~ (null) trong YAML => tự quyết định: freeze thì khỏi lưu backbone cho đỡ nặng
 SAVE_BACKBONE = cfg.save_backbone if cfg.save_backbone is not None else (not FREEZE_BACKBONE)
